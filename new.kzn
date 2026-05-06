@@ -1,0 +1,81 @@
+// 1. Using 32-bit floats for basic spatial coordinates
+blueprint Point {
+    let x: float = 0.0f;
+    let y: float = 0.0f;
+}
+
+// 2. Using 64-bit doubles for high-precision algorithmic math
+// This calculates square roots iteratively using Newton's Method!
+function calculateSqrt(let n: double): double {
+    if (n <= 0.0) {
+        return 0.0;
+    }
+
+    let guess: double = n / 2.0;
+    let previousGuess: double = 0.0;
+    
+    let diff: double = 1.0;
+    let tolerance: double = 0.000001; // High precision stop condition
+    
+    while (diff > tolerance) {
+        previousGuess = guess;
+        
+        // Newton's Formula: guess = (guess + (n / guess)) / 2.0
+        // This tests strict FDiv and FAdd AST grouping
+        guess = (guess + (n / guess)) / 2.0;
+        
+        // Manual absolute value calculation
+        if (guess > previousGuess) {
+            diff = guess - previousGuess;
+        } else {
+            diff = previousGuess - guess;
+        }
+    }
+    
+    return guess;
+}
+
+function main(): int {
+    print("=== DSA: Exact 2D Distance ===");
+    
+    let p1: Point = new Point();
+    let p2: Point = new Point();
+    
+    // Testing your fixed scanner with temporary floats!
+    print("Enter Point 1 X (ex: 3.5):");
+    let tempX: float = 0.0f;
+    scan(tempX);
+    p1.x = tempX;
+    
+    print("Enter Point 1 Y:");
+    let tempY: float = 0.0f;
+    scan(tempY);
+    p1.y = tempY;
+    
+    print("Enter Point 2 X:");
+    scan(tempX);
+    p2.x = tempX;
+    
+    print("Enter Point 2 Y:");
+    scan(tempY);
+    p2.y = tempY;
+    
+    print("---------------------------");
+    print("Calculating exact distance...");
+    
+    // 1. Calculate squared differences using 32-bit math
+    let dx: float = p2.x - p1.x;
+    let dy: float = p2.y - p1.y;
+    let squaredDistance: float = (dx * dx) + (dy * dy);
+    
+    // 2. THE ULTIMATE TEST: The Upcast!
+    // Passing a 'float' into a 'double' parameter. 
+    // Your IR Generator must inject the 'CreateFPExt' instruction here.
+    let exactDistance: double = calculateSqrt(squaredDistance);
+    
+    print("The exact distance is:");
+    print(exactDistance);
+    print("===========================");
+    
+    return 0;
+}

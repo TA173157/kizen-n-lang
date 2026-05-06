@@ -1,0 +1,395 @@
+Compiler Visual Flow Document
+Project: Compiler Design
+Purpose: Easy-to-follow execution flow for each major part and node type.
+
+================================================================
+1) Full Compiler Flow (One-line view)
+================================================================
+Source Code
+  -> Lexer (tokens)
+  -> Parser (AST tree)
+  -> Semantic Analyzer (type/scope validation)
+  -> IR Generator (LLVM IR output)
+
+================================================================
+2) Stage-by-Stage Visual Flow
+================================================================
+
+STAGE A: LEXER FLOW
+-------------------
+Input: raw source text
+
+Step A1: Skip whitespace
+Step A2: Read current char
+Step A3: Decide token category
+  - alphabetic -> identifier/keyword
+  - digit -> number literal
+  - quote -> string/char literal
+  - operator symbol -> operator token
+Step A4: Return token
+Step A5: Repeat until EOF
+
+Output: token list
+
+
+STAGE B: PARSER FLOW
+--------------------
+Input: token list
+
+Step B1: Start `parse_program`
+Step B2: Repeatedly call `parse_statement`
+Step B3: Inside statement parser:
+  - route by first token (`if`, `while`, `let`, `function`, etc.)
+Step B4: Build AST nodes for statements + expressions
+Step B5: For expressions use Pratt parser:
+  - parse prefix
+  - parse postfix/infix by precedence
+Step B6: Continue until EOF token
+
+Output: `ProgramNode` AST
+
+
+STAGE C: SEMANTIC ANALYZER FLOW
+-------------------------------
+Input: AST
+
+Step C1: Enter global scope
+Step C2: Visit each AST node
+Step C3: For each node, validate semantic rules:
+  - variable exists?
+  - types compatible?
+  - function call args valid?
+  - loop-only statements used correctly?
+Step C4: Push/pop scopes for blocks/functions/loops
+Step C5: Throw error if any rule fails
+
+Output: semantically valid AST (or error)
+
+
+STAGE D: IR GENERATOR FLOW
+--------------------------
+Input: validated AST
+
+Step D1: Initialize LLVM context/module/builder
+Step D2: Visit AST nodes
+Step D3: Emit LLVM instructions:
+  - literals -> constants
+  - expressions -> arithmetic/compare/call instructions
+  - statements -> branches, blocks, stores, returns
+Step D4: Build control flow graph (if/while/for blocks)
+Step D5: Final module contains LLVM IR
+
+Output: LLVM IR module
+
+================================================================
+3) Expression Flow Map (Parser -> Semantic -> IR)
+================================================================
+
+3.1 LiteralExpr
+---------------
+Parser:
+  token -> `LiteralExpr`
+Semantic:
+  infer type from literal token
+IR:
+  emit LLVM constant
+
+
+3.2 VariableExpr
+----------------
+Parser:
+  identifier token -> `VariableExpr`
+Semantic:
+  lookup variable in scope stack
+IR:
+  load variable from alloca
+
+
+3.3 BinaryExpr (`a + b`, `x < y`)
+----------------------------------
+Parser:
+  built using Pratt precedence rules
+Semantic:
+  visit left + right
+  validate operator/type compatibility
+  set result type
+IR:
+  emit instruction (`add`, `sub`, `icmp`, `and`, etc.)
+
+
+3.4 UnaryExpr (`-x`, `!x`, `++x`)
+---------------------------------
+Parser:
+  prefix/postfix handling in expression parser
+Semantic:
+  check operand type for operator
+IR:
+  emit neg/not (inc/dec currently partial in IR code)
+
+
+3.5 AssignExpr (`x = y`, `x += 1`)
+-----------------------------------
+Parser:
+  assignment operator recognized in infix stage
+  lhs must be assignable expression
+Semantic:
+  type of target must equal type of value
+IR:
+  resolve target pointer
+  compute compound operation if needed
+  store result
+
+
+3.6 MemberExpr (`obj.field`, `ptr->field`)
+-------------------------------------------
+Parser:
+  parsed as postfix member chain
+Semantic:
+  base must be blueprint/class type
+  field must exist
+IR:
+  compute GEP for field index
+  load/store field
+
+
+3.7 ArrayAccessExpr (`arr[i]`)
+------------------------------
+Parser:
+  postfix `[]` parsing
+Semantic:
+  index must be int
+  base must be array
+  result type becomes element type
+IR:
+  intended via pointer arithmetic/load (currently incomplete)
+
+
+3.8 CallExpr (`foo(a,b)`)
+-------------------------
+Parser:
+  postfix `()` and argument list parsing
+Semantic:
+  callee must be function
+  arg count and arg types must match
+IR:
+  evaluate args and emit call instruction
+
+
+3.9 InstantiateExpr (`new ClassName()`)
+---------------------------------------
+Parser:
+  dedicated parse path for `new`
+Semantic:
+  class symbol must exist and be blueprint
+IR:
+  allocate instance (struct alloca)
+
+================================================================
+4) Statement Flow Map (Parser -> Semantic -> IR)
+================================================================
+
+4.1 VarDeclStmt (`let x:int = expr;`)
+-------------------------------------
+Parser:
+  parse name + type + initializer
+Semantic:
+  initializer type must match declared type
+  declare symbol in scope
+IR:
+  alloca variable
+  store initializer value
+
+
+4.2 ExprStmt
+------------
+Parser:
+  fallback when statement is expression + semicolon
+Semantic:
+  just validate expression
+IR:
+  emit expression instructions
+
+
+4.3 BlockStmt (`{ ... }`)
+-------------------------
+Parser:
+  parse statement list until `}`
+Semantic:
+  enter new scope
+  analyze inner statements
+  exit scope
+IR:
+  emit inner statements in sequence
+
+
+4.4 IfStmt
+----------
+Parser:
+  parse condition, then branch, optional else
+Semantic:
+  condition must be boolean
+IR:
+  create then/else/merge basic blocks
+  branch based on condition
+
+
+4.5 WhileStmt
+-------------
+Parser:
+  parse condition and body
+Semantic:
+  condition must be boolean
+  update loop depth for break/continue checks
+IR:
+  create cond/body/end blocks
+  loop body back to cond
+
+
+4.6 ForStmt
+-----------
+Parser:
+  parse init ; condition ; increment ; body
+Semantic:
+  analyze each part
+  condition must be boolean
+IR:
+  build init -> cond -> body -> inc -> cond cycle
+  provide exit block
+
+
+4.7 ReturnStmt
+--------------
+Parser:
+  parse optional expression before `;`
+Semantic:
+  determine returned type (value or void)
+IR:
+  emit `ret` instruction
+
+
+4.8 BreakStmt / ContinueStmt
+----------------------------
+Parser:
+  parse keyword + semicolon
+Semantic:
+  valid only when inside loop
+IR:
+  branch to loop exit/inc target blocks
+
+
+4.9 FunctionStmt
+----------------
+Parser:
+  parse function name, params, return type, body
+Semantic:
+  register function signature
+  create function scope
+  declare parameters
+  analyze body
+IR:
+  create LLVM function
+  allocate/store parameters
+  generate body blocks/instructions
+
+
+4.10 BluePrintExpr
+------------------
+Parser:
+  parse blueprint name + body statements
+Semantic:
+  collect and register field types
+IR:
+  create LLVM StructType and field-index map
+
+
+4.11 PrintStmt / ScanStmt
+-------------------------
+Parser:
+  parse print/scan argument syntax
+Semantic:
+  validate expression or target variable existence
+IR:
+  call `printf` / `scanf` with appropriate format and arguments
+
+================================================================
+5) Real Execution Trace Example
+================================================================
+
+Example source:
+`function add(let a:int, let b:int): int { return a + b; }`
+
+Lexer trace:
+  FUNCTION VAL(add) L_PAREN LET VAL(a) OP_COLON INT COMMA LET VAL(b)
+  OP_COLON INT R_PAREN OP_COLON INT L_CURLB RETURN VAL(a) PLUS VAL(b)
+  SEMICOLON R_CURLB EF
+
+Parser trace:
+  ProgramNode
+   -> FunctionStmt(name=add, params=[a:int,b:int], return=int)
+      -> BlockStmt
+         -> ReturnStmt
+            -> BinaryExpr(VariableExpr(a), PLUS, VariableExpr(b))
+
+Semantic trace:
+  - Declare function `add`
+  - Enter function scope
+  - Declare params `a`, `b`
+  - Analyze `a + b`: both int => valid
+  - Return expression type int => compatible
+  - Exit function scope
+
+IR trace:
+  - Create LLVM function `add(i32, i32) -> i32`
+  - Entry block:
+    - allocate `a`, `b`
+    - store incoming args
+    - load `a`, load `b`
+    - add
+    - return result
+
+================================================================
+6) Fast Debug Checklist (When something fails)
+================================================================
+
+If tokenization fails:
+- Check Lexer operator/keyword branches.
+- Verify unknown chars and string termination.
+
+If parsing fails:
+- Check `consume_if` expectation around that syntax.
+- Check precedence table (`get_binding_power`) for expression shape issues.
+
+If semantic error appears:
+- Check variable declared before use.
+- Check type equality (`Type::operator==`).
+- Check loop depth for break/continue.
+
+If IR crashes/wrong output:
+- Ensure AST node visit is implemented in IRGenerator.
+- Verify type mapping in `getLLVMType`.
+- Verify struct maps (`StructTypes`, `StructFields`) are initialized before member access.
+
+================================================================
+7) Learning Path (Best way to master this quickly)
+================================================================
+
+Day 1:
+- Read `Token.h`, `Lexer.cpp`, print token stream for sample program.
+
+Day 2:
+- Read `AST.h`, `parser.cpp`, print AST for same sample.
+
+Day 3:
+- Read `SemanticAnalyzer.cpp`, trace `current_type` changes.
+
+Day 4:
+- Read `IRGenerator.cpp`, compare AST node -> emitted LLVM instruction.
+
+Repeat with one feature at a time:
+- variable declarations
+- arithmetic
+- if/while/for
+- functions
+- blueprints/classes
+
+That feature-by-feature loop gives the fastest deep understanding.

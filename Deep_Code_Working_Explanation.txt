@@ -1,0 +1,641 @@
+Deep Code Working Explanation
+Project: Compiler Design
+Goal: Understand each part, each function, and how data flows through the code.
+
+================================================================
+0) Big Picture First (Very Important)
+================================================================
+Your compiler pipeline in these files is:
+
+1) Source code text
+   -> `Lexer` breaks text into tokens
+2) Token stream
+   -> `Parser` builds AST (tree representation of program structure)
+3) AST
+   -> `SemanticAnalyzer` checks correctness (types, scope, loops, function calls, etc.)
+4) Valid AST
+   -> `IRGenerator` turns AST into LLVM IR (low-level intermediate code)
+
+Think of it as:
+Text -> Words (tokens) -> Grammar tree (AST) -> Meaning check (semantic) -> Machine-friendly IR.
+
+================================================================
+1) Token.h (Language vocabulary + type model)
+================================================================
+
+What this file does:
+- Defines every token category your language understands (`TokenType`).
+- Defines what one token object looks like (`Token`).
+- Defines semantic type representation (`Type`) used later by parser/semantic analyzer.
+
+Important structures:
+
+1. `enum class TokenType`
+   This is your language dictionary.
+   - Operators: `PLUS`, `MINUS`, `DIV`, `MULTI`, etc.
+   - Keywords: `IF`, `ELSE`, `FUNCTION`, `LET`, `NEW`, etc.
+   - Literals: `INT_LIT`, `STRING_LIT`, etc.
+   - Brackets/punctuation: `L_PAREN`, `SEMICOLON`, etc.
+   - Special: `EF` for EOF, `ERROR` for lexing problems.
+
+2. `struct Token`
+   - `type`: category from enum.
+   - `value`: exact text (non-owning `string_view`).
+   Example:
+   - Source text `123` -> token `{INT_LIT, "123"}`
+   - Source text `if` -> token `{IF, "if"}`
+
+3. `struct Type`
+   This is NOT lexical tokenization anymore; this is semantic type logic.
+   Fields:
+   - `base`: base token-type representing type kind (`INT`, `FLOAT`, `CLASS`, `POINTER`, `ARRAY`, etc.)
+   - `innerType`: used for nested types:
+       - `int*` -> POINTER(innerType=int)
+       - `int[10]` -> ARRAY(innerType=int, size=10)
+   - `structName`: for blueprint/class names.
+   - `arraySize`: optional array size.
+
+   Constructors:
+   - `Type(TokenType b)` simple types.
+   - `Type(TokenType b, Type* inner, int size)` nested array/pointer.
+   - `Type(TokenType b, string name)` named blueprint/class type.
+
+   Equality (`operator==`):
+   - Compares base, structName, arraySize.
+   - Recursively compares nested inner types if present.
+   Why this matters:
+   - Semantic checker uses this to verify assignments and declarations:
+     `let x:int = 10;` valid
+     `let x:int = "hello";` invalid
+
+================================================================
+2) Lexer.h / Lexer.cpp (Text -> Token stream)
+================================================================
+
+What Lexer does:
+- Reads source character by character.
+- Groups characters into meaningful tokens.
+- Returns one token each `getNextToken()` call.
+
+Private state:
+- `src`: complete source text.
+- `pos`: current index in source.
+- `keywords`: map from string to token type.
+
+Helper functions:
+
+1. `peek()`
+   - Returns current char without consuming.
+   - Returns `\0` if out of range.
+
+2. `peekNext()`
+   - Lookahead by one char.
+   - Useful for two-char operators (`==`, `>=`, etc.) and decimal detection.
+
+3. `advance()`
+   - Returns current char and moves cursor forward.
+
+Constructor:
+- Fills keyword map (`if`, `while`, `function`, `let`, `print`, `scan`, `true`, `false`, etc.).
+- This is how identifiers become keywords.
+
+Main function: `Token Lexer::getNextToken()`
+
+Flow inside:
+1. Skip whitespace.
+2. If end reached -> return EOF token.
+3. Use DFA-like state machine:
+   - State 0: decide token category based on first char.
+   - State 1: identifier/keyword.
+   - State 2: numeric literal.
+   - State 3: string literal.
+   - State 4: char literal.
+
+State 0 key branches:
+- alphabetic -> identifier flow
+- digit -> number flow
+- quote -> string/char flow
+- symbol -> operator/punctuation flow:
+  - Handles single and compound operators:
+    `=`, `==`, `+`, `+=`, `-`, `-=`, `->`, `/`, `/=`, `//`, `<<`, `<<=`, etc.
+
+Important behavior notes:
+- `//` returns COMMENT token (parser can ignore or handle).
+- Unknown character -> returns `ERROR`.
+- `++` and `--` lexing is currently commented out in `+` and `-` sections.
+
+Number parsing:
+- Digits consumed.
+- Decimal point + following digit -> floating point.
+- Optional `f/F` suffix -> `FLOAT_LIT`.
+- Otherwise:
+  - decimal present -> `DOUBLE_LIT`
+  - no decimal -> `INT_LIT`
+
+String parsing:
+- Consumes until closing `"` or EOF.
+- Returns `ERROR` if unterminated.
+
+Char parsing:
+- Very simple logic: expects single character then closing `'`.
+- Returns `ERROR` if unterminated.
+
+================================================================
+3) AST.h (Program structure model + Visitor interface)
+================================================================
+
+What this file does:
+- Defines AST node classes (expressions/statements).
+- Defines base interfaces (`Node`, `Expr`, `Stmt`).
+- Defines `Visitor` interface for operations on AST.
+
+Why visitor pattern:
+- Same AST can be processed by multiple passes:
+  - semantic pass (`SemanticAnalyzer`)
+  - IR generation pass (`IRGenerator`)
+- Each pass implements `visit(NodeType*)`.
+
+Base classes:
+- `Node`: has virtual `accept(Visitor*)`.
+- `Expr`: expression node, supports `isAssignable()`.
+- `Stmt`: statement node.
+
+Assignable expressions:
+- `VariableExpr`
+- `DereferenceExpr`
+- `MemberExpr`
+- `ArrayAccessExpr`
+These can appear on left side of assignment.
+
+Key expression nodes:
+- `LiteralExpr`: numbers/strings/chars/bools.
+- `VariableExpr`: identifier usage.
+- `BinaryExpr`: `a + b`, `x < y`.
+- `UnaryExpr`: `-x`, `!x`, pre/post inc/dec.
+- `AssignExpr`: `target op value`.
+- `MemberExpr`: `obj.field` or `obj->field`.
+- `ArrayAccessExpr`: `arr[i]`.
+- `CallExpr`: `fn(args...)`.
+- `DereferenceExpr`: `*ptr`.
+- `InstantiateExpr`: `new ClassName()`.
+
+Key statement nodes:
+- `VarDeclStmt`: declaration with type and initializer.
+- `ExprStmt`: expression used as statement (`a = 5;`).
+- `IfStmt`, `WhileStmt`, `ForStmt`.
+- `ReturnStmt`, `BreakStmt`, `ContinueStmt`.
+- `BlockStmt`: `{ ... }`.
+- `FunctionStmt`: function declaration.
+- `BluePrintExpr`: blueprint/class declaration.
+- `PrintStmt`, `ScanStmt`.
+- `ProgramNode`: root containing all top-level statements.
+
+================================================================
+4) parser.h / parser.cpp (Token stream -> AST)
+================================================================
+
+What parser does:
+- Consumes tokens from lexer output.
+- Builds AST nodes according to grammar.
+
+Core parser helpers:
+
+1. `peek()`
+   - Current token without consuming.
+
+2. `consume()`
+   - Consume token and move forward.
+   - Throws error if input unexpectedly ended.
+
+3. `consume_if(expectedType, errorMessage)`
+   - Enforces grammar tokens.
+   - Example: after `if`, expects `(`.
+
+4. `throw_error(...)`
+   - Throws parse error with context text.
+
+Type parser:
+
+`Type Parser::parse_type()`
+- Reads base type:
+  - primitive keywords (`int`, `float`, etc.) or
+  - class type (`VAL` interpreted as blueprint name).
+- Then parses nested modifiers repeatedly:
+  - `*` -> pointer wrapping
+  - `[size]` or `[]` -> array wrapping
+- Builds nested `Type` object.
+
+Top-level entry:
+
+`parse_program()`
+- Repeatedly parses statements until EOF.
+- Produces `ProgramNode`.
+
+Statement dispatcher:
+
+`parse_statement()`
+- Checks first token and routes:
+  - `return` -> `parse_return()`
+  - `if` -> `parse_if()`
+  - `while` -> `parse_while()`
+  - `for` -> `parse_for()`
+  - `{` -> `parse_block()`
+  - `let` -> variable declaration
+  - `function` -> function declaration
+  - `class`/blueprint -> blueprint declaration
+  - `print` / `scan` -> IO statements
+  - otherwise parse expression statement.
+
+Detailed statement parsers:
+
+1. `parse_block()`
+   - Expects `{`.
+   - Parses statements until `}`.
+   - Returns `BlockStmt`.
+
+2. `parse_if()`
+   - Grammar: `if (expr) stmt [else stmt]`
+   - Returns `IfStmt`.
+
+3. `parse_while()`
+   - Grammar: `while (expr) stmt`.
+
+4. `parse_for()`
+   - Grammar: `for (init; condition; increment) stmt`.
+   - Init is parsed as statement.
+
+5. `parse_return()`, `parse_break()`, `parse_continue()`
+   - Parses control-flow statements with semicolon checks.
+
+6. `parse_variable_declaration()`
+   - Grammar: `let name : type = expr ;`
+   - Returns `VarDeclStmt`.
+
+7. `parse_function()`
+   - Parses function name.
+   - Parses params with `parse_parameter()`.
+   - Parses return type after `:`.
+   - Parses body block.
+
+8. `parse_blueprint()`
+   - Parses blueprint name and body.
+   - Collects contained statements as fields/members.
+
+9. `parse_print()` / `parse_scan()`
+   - Dedicated IO statement parsing.
+
+Expression parser (Pratt parser):
+
+Function: `parse_expression(int min_bp)`
+
+This is the most important parser function.
+
+Step A: Parse prefix/atom:
+- literals
+- variables
+- parenthesized expression
+- unary prefix (`-`, `!`, pre inc/dec, dereference `*`)
+- `new ClassName()`
+
+Step B: Loop for postfix and infix:
+- postfix `++` / `--`
+- member access `.` / `->`
+- array indexing `[]`
+- function call `()`
+- binary operators (`+`, `*`, `<`, `==`, etc.)
+- assignment operators (`=`, `+=`, ...), with l-value check.
+
+Binding-power function:
+- `get_binding_power(op)` encodes precedence + associativity.
+- Parser uses `(leftBP, rightBP)` to decide tree shape correctly.
+
+Why this is powerful:
+- Handles precedence and chaining naturally:
+  `a + b * c` -> multiplication binds tighter.
+  `a = b = c` -> right-associative assignment behavior.
+
+================================================================
+5) SemanticAnalyzer.h / SemanticAnalyzer.cpp (AST correctness pass)
+================================================================
+
+What semantic analyzer does:
+- Enforces meaning rules that syntax alone cannot ensure.
+- Examples:
+  - variable must be declared before use
+  - type on both sides of assignment must match
+  - conditions in `if/while/for` must be boolean
+  - `break/continue` only inside loops
+  - function calls must have correct arg count/types
+
+Data structures:
+
+1. `scopes` (vector of maps)
+   - Symbol table stack.
+   - Each block/function/loop may add scope.
+   - Lookup starts inner -> outer.
+
+2. `Symbol`
+   - Stores variable/function metadata:
+     - name
+     - type
+     - function signature (`FunctionType`) if function
+     - blueprint field map if blueprint symbol
+
+3. `current_type`
+   - Since visitor returns `void`, this stores type result from latest expression visit.
+
+4. `loop_depth`
+   - Used to validate `break`/`continue`.
+
+Core scope functions:
+
+1. `enter_scope()` / `exit_scope()`
+   - Push/pop symbol tables.
+   - Guards against exiting global scope.
+
+2. `declare(name, type, ...)`
+   - Adds symbol in current scope.
+   - Rejects redeclaration in same scope.
+
+3. `lookup(name)`
+   - Searches from innermost scope outward.
+   - Throws if missing.
+
+Visitor highlights:
+
+1. `visit(LiteralExpr*)`
+   - Converts literal token type to semantic base type.
+
+2. `visit(VariableExpr*)`
+   - Resolves symbol and sets `current_type`.
+
+3. `visit(BinaryExpr*)`
+   - Visits left and right.
+   - Enforces type compatibility.
+   - Arithmetic requires numeric types.
+   - Comparison returns boolean.
+   - Logical requires boolean operands.
+
+4. `visit(VarDeclStmt*)`
+   - Analyzes initializer.
+   - Checks initializer type == declared type.
+   - Declares variable.
+
+5. `visit(IfStmt*)`, `visit(WhileStmt*)`, `visit(ForStmt*)`
+   - Enforce boolean condition.
+   - Manage loop depth for loop constructs.
+
+6. `visit(ReturnStmt*)`
+   - Sets current return expression type or void.
+   - (You have variable tracking for function return context; full return-type enforcement can be extended here.)
+
+7. `visit(BreakStmt*)` / `visit(ContinueStmt*)`
+   - Errors if loop_depth == 0.
+
+8. `visit(FunctionStmt*)`
+   - Collects function signature.
+   - Declares function symbol.
+   - Creates function scope.
+   - Declares parameters.
+   - Analyzes body.
+
+9. `visit(BluePrintExpr*)`
+   - Builds blueprint symbol and captures declared fields.
+
+10. `visit(AssignExpr*)`
+    - Ensures target type and assigned value type match.
+
+11. `visit(UnaryExpr*)`
+    - `!` requires boolean.
+    - numeric unary operators require numeric types.
+
+12. `visit(CallExpr*)`
+    - Callee must resolve to function symbol.
+    - arg count must match.
+    - each argument type must match parameter type.
+    - expression result type = function return type.
+
+13. `visit(DereferenceExpr*)`
+    - Operand must be pointer type.
+    - Result type = pointer inner type.
+
+14. `visit(MemberExpr*)`
+    - Base object must be blueprint/class type.
+    - Requested property must exist in blueprint fields.
+    - Result type = property type.
+
+15. `visit(ArrayAccessExpr*)`
+    - Index must be int.
+    - Base must be array.
+    - Result type = inner element type.
+
+16. `visit(InstantiateExpr*)`
+    - Class symbol must exist and be blueprint.
+    - Result type is that class type.
+
+================================================================
+6) IRGenerator.h / IRGenerator.cpp (AST -> LLVM IR)
+================================================================
+
+What IR generation does:
+- Converts AST semantics into LLVM instructions and control-flow blocks.
+- Output module contains functions, basic blocks, instructions, constants, struct definitions, calls, etc.
+
+Core LLVM objects:
+- `LLVMContext`: global IR type/value context.
+- `Module`: container for whole compiled unit.
+- `IRBuilder`: helper to emit instructions at current insertion point.
+
+Generator state:
+- `NamedValues`: variable name -> stack allocation (`alloca`) for local variables.
+- `StructTypes`: blueprint name -> LLVM struct type.
+- `StructFields`: structName -> fieldName -> fieldIndex.
+- `currentVal`: last computed IR value.
+- `LoopIncBlocks`, `LoopExitBlocks`: stacks for continue/break targets.
+
+Utility functions:
+
+1. `processEscapes(string)`
+   - Converts textual escapes into actual chars for string literals.
+
+2. `getLLVMType(TokenType)`
+   - Maps language types to LLVM types.
+   Note:
+   - `FLOAT` and `DOUBLE` currently map to int32 in this code (likely incomplete and should be updated).
+
+3. Constructor
+   - Initializes context/module/builder.
+   - Declares external C functions: `printf`, `scanf`.
+
+4. `generate(Node*)`
+   - Entry for node codegen.
+   - Calls node visitor and returns `currentVal`.
+
+Expression codegen:
+
+1. `visit(LiteralExpr*)`
+   - Emits constants:
+     - int -> `ConstantInt`
+     - float -> `ConstantFP`
+     - bool -> i1 constant
+     - char -> i8 constant
+     - string -> global string pointer
+
+2. `visit(VariableExpr*)`
+   - Finds variable alloca.
+   - Emits load instruction.
+
+3. `visit(BinaryExpr*)`
+   - Emits left and right values.
+   - Emits instruction based on operator:
+     - Add/Sub/Mul/Div
+     - integer comparisons
+     - bitwise logical and/or
+
+4. `visit(AssignExpr*)`
+   - Evaluates RHS value.
+   - Resolves target pointer:
+     - variable alloca, or
+     - member pointer via GEP.
+   - Handles compound assignment by load-op-store.
+   - Stores final value.
+
+5. `visit(UnaryExpr*)`
+   - Emits negation/not.
+   - ++/-- currently reported as not yet implemented at IR level.
+
+6. `visit(MemberExpr*)`
+   - Computes field pointer using GEP and loads field value.
+
+7. `visit(CallExpr*)`
+   - Resolves function in module.
+   - Evaluates args.
+   - Emits call.
+
+8. `visit(InstantiateExpr*)`
+   - Allocates stack instance of struct type.
+
+9. `visit(DereferenceExpr*)` and `visit(ArrayAccessExpr*)`
+   - Currently empty/incomplete in this file.
+
+Statement codegen:
+
+1. `visit(VarDeclStmt*)`
+   - Allocates local variable (`alloca`).
+   - Stores initializer result if present.
+
+2. `visit(IfStmt*)`
+   - Builds then/else/merge basic blocks.
+   - Emits conditional branch and final merge flow.
+
+3. `visit(WhileStmt*)`
+   - Builds cond/body/end blocks.
+   - Loops by branching body -> cond.
+   - Registers loop control blocks for break/continue.
+
+4. `visit(ForStmt*)`
+   - Emits init.
+   - Builds cond/body/inc/exit blocks.
+   - Wires control flow in correct order.
+   - Supports break/continue stacks.
+
+5. `visit(BlockStmt*)`
+   - Emits each statement sequentially.
+
+6. `visit(ReturnStmt*)`
+   - Emits `ret value` or `ret void`.
+
+7. `visit(BreakStmt*)`, `visit(ContinueStmt*)`
+   - Branches to current loop exit/inc blocks.
+
+8. `visit(ProgramNode*)`
+   - Emits each top-level statement.
+
+9. `visit(ExprStmt*)`
+   - Emits contained expression.
+
+10. `visit(FunctionStmt*)`
+    - Builds LLVM function type and function object.
+    - Creates entry block.
+    - Allocates parameter slots and stores incoming args.
+    - Emits body.
+    - Ensures void function returns and verifies function.
+
+11. `visit(BluePrintExpr*)`
+    - Collects field LLVM types.
+    - Creates LLVM struct type.
+    - Stores field index map for member access.
+
+12. `visit(PrintStmt*)`
+    - Chooses format string based on value type.
+    - Emits `printf` call.
+
+13. `visit(ScanStmt*)`
+    - Gets variable alloca address.
+    - Emits `scanf` call.
+
+================================================================
+7) End-to-End Example (How one line travels through compiler)
+================================================================
+
+Example source:
+`let x:int = 5 + 3;`
+
+Stage 1 Lexer:
+- LET, VAL(x), OP_COLON, INT, ASSIGN, INT_LIT(5), PLUS, INT_LIT(3), SEMICOLON
+
+Stage 2 Parser:
+- Creates `VarDeclStmt`
+  - name: x
+  - type: INT
+  - initializer: `BinaryExpr(Literal(5), PLUS, Literal(3))`
+
+Stage 3 Semantic:
+- Checks initializer expression:
+  - both literals are INT -> binary PLUS valid -> result INT
+- Verifies declared type INT matches initializer type INT
+- Declares symbol `x` in scope
+
+Stage 4 IR Generation:
+- allocates `x` with `alloca i32`
+- creates constants 5 and 3
+- emits `add` instruction
+- stores result into x
+
+================================================================
+8) Current Code Strengths and Incomplete Areas (Important for learning)
+================================================================
+
+Strong parts:
+- Clean token/type model.
+- Pratt parser supports rich expression precedence.
+- Semantic checks cover most core language rules.
+- LLVM control flow for if/while/for is implemented.
+- Blueprint struct mapping exists.
+
+Incomplete / needs caution:
+- Lexer has ++/-- token lexing commented out (yet parser/semantic refer to them).
+- IR type mapping for FLOAT/DOUBLE currently maps to int32 (should be float/double LLVM types).
+- IR member access currently uses hardcoded struct `"Player"` in some places.
+- `visit(DereferenceExpr*)` and `visit(ArrayAccessExpr*)` in IR are empty.
+- Some naming typos (`feild`, `NILL`) are harmless but reduce readability.
+
+================================================================
+9) Practical way to study this code (Recommended)
+================================================================
+
+Read in this order for best understanding:
+1. `Token.h` (language vocabulary + type model)
+2. `AST.h` (tree model)
+3. `Lexer.cpp` (token creation)
+4. `parser.cpp` (tree building)
+5. `SemanticAnalyzer.cpp` (meaning/type rules)
+6. `IRGenerator.cpp` (actual code emission)
+
+For each new feature, always ask:
+- How is it tokenized?
+- How is it parsed into AST?
+- How is it semantically validated?
+- How is it emitted in IR?
+
+That 4-step checklist is the fastest way to master your compiler.

@@ -1,0 +1,48 @@
+
+blueprint Fraction {
+    let numerator: int = 0;
+    let denominator: int = 1;
+}
+function calculateGCD(let a: int, let b: int): int {
+    while (b > 0) {
+        let temp: int = b;
+        let remainder: int = a - ((a / b) * b);
+        
+        b = remainder;
+        a = temp;
+    }
+    
+    return a;
+}
+
+function main(): int {
+    print("=== DSA: Fraction Reducer ===");
+    let frac: Fraction = new Fraction();
+    
+   print("Enter Numerator:");
+    let tempNum: int = 0;
+    scan(tempNum);
+    frac.numerator = tempNum;
+    
+    print("Enter Denominator:");
+    let tempDen: int = 0;
+    scan(tempDen);
+    frac.denominator = tempDen;
+    
+    print("-------------------");
+    let gcd: int = calculateGCD(frac.numerator, frac.denominator);
+    
+    print("The Greatest Common Divisor is:");
+    print(gcd);
+    frac.numerator = frac.numerator / gcd;
+    frac.denominator = frac.denominator / gcd;
+    
+    print("-------------------");
+    print("Your Reduced Fraction is:");
+    print(frac.numerator);
+    print("over");
+    print(frac.denominator);
+    print("=========================");
+    
+    return 0;
+}

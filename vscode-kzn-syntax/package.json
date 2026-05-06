@@ -1,0 +1,30 @@
+{
+  "name": "kzn-language",
+  "displayName": "Kizen-N Language Support",
+  "description": "Lightweight syntax highlighting for Kizen-N .kzn files without diagnostics.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kzn",
+        "aliases": ["Kizen-N", "kzn"],
+        "extensions": [".kzn"],
+        "configuration": "language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kzn",
+        "scopeName": "source.kzn",
+        "path": "syntaxes/kzn.tmLanguage.json"
+      }
+    ]
+  }
+}

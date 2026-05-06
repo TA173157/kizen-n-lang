@@ -1,0 +1,45 @@
+// Manual Modulo algorithm: remainder = numerator - (quotient * denominator)
+function getRemainder(let n: int, let d: int): int {
+    // Because n and d are integers, LLVM's SDiv will truncate the decimal!
+    let quotient: int = n / d; 
+    let product: int = quotient * d;
+    return n - product;
+}
+
+function main(): int {
+    print("=== Palindrome Number Checker ===");
+    print("Enter an integer to check:");
+    
+    let original: int = 0;
+    scan(original);
+    
+    if (original < 0) {
+        print("Negative numbers cannot be palindromes.");
+        return 0;
+    }
+    
+    let temp: int = original;
+    let reversed: int = 0;
+    
+    while (temp > 0) {
+        // Extract the last digit
+        let digit: int = getRemainder(temp, 10);
+        
+        // Shift the reversed number and add the new digit
+        reversed = (reversed * 10) + digit;
+        
+        // Chop off the last digit
+        temp = temp / 10;
+    }
+    
+    print("Reversed number is:");
+    print(reversed);
+    
+    if (original == reversed) {
+        print("Result: 1 (It IS a Palindrome!)");
+    } else {
+        print("Result: 0 (Not a Palindrome)");
+    }
+    
+    return 0;
+}

@@ -1,0 +1,68 @@
+// Blueprint for a facial bounding box
+blueprint Box {
+    let x: float = 0.0f;      // Left edge
+    let y: float = 0.0f;      // Bottom edge
+    let width: float = 0.0f;
+    let height: float = 0.0f;
+}
+
+// Custom Math functions (since we don't have <math.h> yet!)
+function getMin(let a: float, let b: float): float {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+function getMax(let a: float, let b: float): float {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+function main(): int {
+    print("=== Bounding Box Collision Test ===");
+    
+    let face1: Box = new Box();
+    face1.x = 0.0f;
+    face1.y = 0.0f;
+    face1.width = 4.0f;
+    face1.height = 4.0f;
+    
+    let face2: Box = new Box();
+    face2.x = 2.0f;
+    face2.y = 2.0f;
+    face2.width = 4.0f;
+    face2.height = 4.0f;
+    
+    print("Calculating intersection edges...");
+    
+    // Find the coordinates of the overlapping box
+    let interLeft: float = getMax(face1.x, face2.x);
+    let interBottom: float = getMax(face1.y, face2.y);
+    
+    let face1Right: float = face1.x + face1.width;
+    let face2Right: float = face2.x + face2.width;
+    let interRight: float = getMin(face1Right, face2Right);
+    
+    let face1Top: float = face1.y + face1.height;
+    let face2Top: float = face2.y + face2.height;
+    let interTop: float = getMin(face1Top, face2Top);
+    
+    // Check if they actually overlap
+    if (interLeft < interRight) {
+        if (interBottom < interTop) {
+            let overlapWidth: float = interRight - interLeft;
+            let overlapHeight: float = interTop - interBottom;
+            let area: float = overlapWidth * overlapHeight;
+            
+            print("Boxes overlap! Area is:");
+            print(area);
+            return 0;
+        }
+    }
+    
+    print("No overlap detected.");
+    return 0;
+}

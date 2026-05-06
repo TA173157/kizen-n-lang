@@ -1,0 +1,37 @@
+{
+  "scopeName": "source.kzn",
+  "name": "Kizen-N",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.kzn",
+      "match": "//.*$"
+    },
+    {
+      "name": "string.quoted.double.kzn",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.kzn",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.kzn",
+      "match": "\\b\\d+\\b"
+    },
+    {
+      "name": "keyword.control.kzn",
+      "match": "\\b(function|return|if|else|for|while|let|print|scan|true|false|int|float|bool|string)\\b"
+    },
+    {
+      "name": "keyword.operator.kzn",
+      "match": "==|!=|<=|>=|<|>|=|\\+|\\-|\\*|\\/"
+    }
+  ],
+  "repository": {},
+  "fileTypes": [
+    "kzn"
+  ]
+}
