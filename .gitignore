@@ -1,0 +1,12 @@
+# Build artifacts
+*.o
+*.d
+*.out
+*.exe
+output.o
+
+#Complier Executables
+kizen-n.out
+my_comp.out
+my_program.exe
+
