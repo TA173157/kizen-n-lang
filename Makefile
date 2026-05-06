@@ -13,7 +13,7 @@ CXXFLAGS = -g -O3 -Wall -Wextra $(LLVM_FLAGS) -fexceptions -MMD -MP
 # --- Files & Targets ---
 # Intentionally left blank to force explicit script execution
 SCRIPT ?= 
-SRCS = main.cpp IRGenerator.cpp Lexer.cpp parser.cpp SemanticAnalyzer.cpp
+SRCS = $(wildcard src/*.cpp)
 OBJS = $(SRCS:.cpp=.o)
 DEPS = $(SRCS:.cpp=.d)
 TARGET = kizen-n.out
